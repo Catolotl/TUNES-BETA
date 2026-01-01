@@ -633,10 +633,12 @@
       if (!song?.id) return;
       
       currentSong = song;
-      playerTitle.textContent = song.title;
+      playerTitle.textContent = song.title + ' (Loading...)';
       playerArtist.textContent = song.artist?.name || 'Unknown';
       playerCover.src = song.album?.cover_medium || 'https://via.placeholder.com/56';
       player.style.display = 'block';
+      playPauseBtn.textContent = '⏳';
+      playPauseBtn.disabled = true;
 
       // Save to recently played
       const songToSave = {
@@ -661,25 +663,65 @@
           const query = `${song.title} ${song.artist.name} official audio`;
           videoId = await getVideoId(query);
           song.videoId = videoId;
+          // Update saved song with videoId
+          const idx = recentlyPlayed.findIndex(s => s.id === song.id);
+          if (idx !== -1) {
+            recentlyPlayed[idx].videoId = videoId;
+            localStorage.setItem("recentlyPlayed", JSON.stringify(recentlyPlayed));
+          }
         }
 
+        // Load video and wait for user interaction
         if (playerReady && ytPlayer) {
           ytPlayer.loadVideoById(videoId);
-          ytPlayer.playVideo();
+          ytPlayer.pauseVideo(); // Don't autoplay
+          playerTitle.textContent = song.title + ' (Ready - Click Play)';
+          playPauseBtn.textContent = '▶';
+          playPauseBtn.disabled = false;
+          
+          // Try to autoplay (will work if user just clicked)
+          setTimeout(() => {
+            try {
+              ytPlayer.playVideo();
+            } catch (e) {
+              // Autoplay blocked, that's ok - user can click play button
+              console.log('Autoplay blocked, waiting for user interaction');
+            }
+          }, 100);
         } else {
-          // Wait for player
+          // Wait for player to be ready
+          playerTitle.textContent = song.title + ' (Waiting for player...)';
           const checkReady = setInterval(() => {
             if (playerReady && ytPlayer) {
               clearInterval(checkReady);
               ytPlayer.loadVideoById(videoId);
-              ytPlayer.playVideo();
+              ytPlayer.pauseVideo();
+              playerTitle.textContent = song.title + ' (Ready - Click Play)';
+              playPauseBtn.textContent = '▶';
+              playPauseBtn.disabled = false;
+              
+              setTimeout(() => {
+                try {
+                  ytPlayer.playVideo();
+                } catch (e) {
+                  console.log('Autoplay blocked, waiting for user interaction');
+                }
+              }, 100);
             }
           }, 100);
-          setTimeout(() => clearInterval(checkReady), 5000);
+          setTimeout(() => {
+            clearInterval(checkReady);
+            if (!playerReady) {
+              showAlert('Player Error', 'YouTube player failed to load. Please refresh the page.');
+            }
+          }, 5000);
         }
       } catch (err) {
         console.error('Playback error:', err);
-        showAlert('Playback Error', 'Could not play this song. It may not be available on YouTube.');
+        playerTitle.textContent = song.title + ' (Error)';
+        playPauseBtn.textContent = '▶';
+        playPauseBtn.disabled = false;
+        showAlert('Playback Error', 'Could not find this song on YouTube. Try another one!');
       }
     }
 
